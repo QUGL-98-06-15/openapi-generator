@@ -16,9 +16,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 
+import static org.openapitools.codegen.typescript.TypeScriptGroups.*;
+
+@Test(groups = {TYPESCRIPT})
 public class SharedTypeScriptTest {
     @Test
-    public void typesInImportsAreSplittedTest() throws IOException {
+    public void typesInImportsAreSplitTest() throws IOException {
         CodegenConfigurator config =
                 new CodegenConfigurator()
                         .setInputSpec("src/test/resources/split-import.json")

@@ -45,6 +45,7 @@ public class InlineModelResolver {
     private Map<String, String> inlineSchemaNameDefaults = new HashMap<>();
     private Set<String> inlineSchemaNameMappingValues = new HashSet<>();
     public boolean resolveInlineEnums = false;
+    public boolean skipSchemaReuse = false; // skip reusing inline schema if set to true
 
     // structure mapper sorts properties alphabetically on write to ensure models are
     // serialized consistently for lookup of existing models
@@ -73,6 +74,11 @@ public class InlineModelResolver {
 
     public void setInlineSchemaNameDefaults(Map inlineSchemaNameDefaults) {
         this.inlineSchemaNameDefaults.putAll(inlineSchemaNameDefaults);
+
+        if ("true".equalsIgnoreCase(
+                this.inlineSchemaNameDefaults.getOrDefault("SKIP_SCHEMA_REUSE", "false"))) {
+            this.skipSchemaReuse = true;
+        }
     }
 
     void flatten(OpenAPI openAPI) {
@@ -167,7 +173,7 @@ public class InlineModelResolver {
      * Return true if a model should be generated e.g. object with properties,
      * enum, oneOf, allOf, anyOf, etc.
      *
-     * @param schema target schema
+     * @param schema         target schema
      * @param visitedSchemas Visited schemas
      */
     private boolean isModelNeeded(Schema schema, Set<Schema> visitedSchemas) {
@@ -189,6 +195,17 @@ public class InlineModelResolver {
         if (schema instanceof ComposedSchema) {
             // allOf, anyOf, oneOf
             ComposedSchema m = (ComposedSchema) schema;
+
+            if (m.getAllOf() != null && m.getAllOf().size() == 1 && m.getReadOnly() != null && m.getReadOnly()) {
+                // Check if this composed schema only contains an allOf and a readOnly.
+                ComposedSchema c = new ComposedSchema();
+                c.setAllOf(m.getAllOf());
+                c.setReadOnly(true);
+                if (m.equals(c)) {
+                    return isModelNeeded(m.getAllOf().get(0), visitedSchemas);
+                }
+            }
+
             if (m.getAllOf() != null && !m.getAllOf().isEmpty()) {
                 // check to ensure at least of the allOf item is model
                 for (Schema inner : m.getAllOf()) {
@@ -329,7 +346,7 @@ public class InlineModelResolver {
                 } else {
                     // allOf is just one or more types only so do not generate the inline allOf model
                     if (m.getAllOf().size() == 1) {
-                        // handle earlier in this function when looping through properites
+                        // handle earlier in this function when looping through properties
                     } else if (m.getAllOf().size() > 1) {
                         LOGGER.warn("allOf schema `{}` containing multiple types (not model) is not supported at the moment.", schema.getName());
                     } else {
@@ -429,6 +446,10 @@ public class InlineModelResolver {
         if (requestBody.get$ref() != null) {
             String ref = ModelUtils.getSimpleRef(requestBody.get$ref());
             requestBody = openAPI.getComponents().getRequestBodies().get(ref);
+
+            if (requestBody == null) {
+                return;
+            }
         }
 
         flattenContent(requestBody.getContent(),
@@ -623,6 +644,10 @@ public class InlineModelResolver {
     }
 
     private String matchGenerated(Schema model) {
+        if (skipSchemaReuse) { // skip reusing schema
+            return null;
+        }
+
         try {
             String json = structureMapper.writeValueAsString(model);
             if (generatedSignature.containsKey(json)) {
@@ -877,7 +902,7 @@ public class InlineModelResolver {
      *
      * @param name   name of the inline schema
      * @param schema inilne schema
-     * @return the actual model name (based on inlineSchemaNameMapping if provied)
+     * @return the actual model name (based on inlineSchemaNameMapping if provided)
      */
     private String addSchemas(String name, Schema schema) {
         //check inlineSchemaNameMapping
@@ -888,7 +913,7 @@ public class InlineModelResolver {
         addGenerated(name, schema);
         openAPI.getComponents().addSchemas(name, schema);
         if (!name.equals(schema.getTitle()) && !inlineSchemaNameMappingValues.contains(name)) {
-            LOGGER.info("Inline schema created as {}. To have complete control of the model name, set the `title` field or use the inlineSchemaNameMapping option (--inline-schema-name-mapping in CLI).", name);
+            LOGGER.info("Inline schema created as {}. To have complete control of the model name, set the `title` field or use the inlineSchemaNameMapping option (--inline-schema-name-mappings in CLI).", name);
         }
 
         uniqueNames.add(name);
