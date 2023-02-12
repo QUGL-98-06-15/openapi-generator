@@ -1,5 +1,5 @@
 version: 2
-updates:
+updates:QUGL-98-06-15/dependabot.yml
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
